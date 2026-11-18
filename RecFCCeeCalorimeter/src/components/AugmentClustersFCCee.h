@@ -32,7 +32,9 @@ namespace DDSegmentation {
  *
  *  Optionally (thetaLayerCorrectionFile), the theta barycentres of the ECAL barrel layers are corrected for the
  *  S-curve (bias towards the cell centre due to the finite granularity), with a parametrisation read from a JSON
- *  file; the corrected values are stored in theta_<detector>_layer_<i> in place of the uncorrected ones.
+ *  file; the corrected values are stored in theta_<detector>_layer_<i> in place of the uncorrected ones. The
+ *  parametrisation is a function of the energy of the input clusters (before any MVA calibration) and is valid only
+ *  for clusters built with the same algorithm and settings as those used to derive it.
  *
  *  @author Alexis Maloizel
  *  @author Giovanni Marchiori
@@ -100,7 +102,10 @@ private:
       this, "thetaLayerCorrectionFile", "",
       "JSON file with the parametrisation of the S-curve of the theta barycentre of each ECAL barrel layer. If set, "
       "theta_<detector>_layer_<i> contains the corrected barycentres. Requires linear weights "
-      "(thetaRecalcWeights < 0) for the corrected layers."};
+      "(thetaRecalcWeights < 0) for the corrected layers. The parametrisation depends on the energy of the input "
+      "clusters (before any MVA calibration) and on how they were built, so it must be derived with the same "
+      "clustering algorithm and settings (e.g. sliding-window clusters with or without re-centring of the position "
+      "window, which differ from topological clusters)."};
 
   /// One variable x_i of a term of the S-curve parametrisation, with its coefficient c_i
   struct SCurveVariable {
