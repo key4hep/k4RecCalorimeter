@@ -102,13 +102,17 @@ private:
       "theta_<detector>_layer_<i> contains the corrected barycentres. Requires linear weights "
       "(thetaRecalcWeights < 0) for the corrected layers."};
 
+  /// One variable x_i of a term of the S-curve parametrisation, with its coefficient c_i
+  struct SCurveVariable {
+    int energyNode;   // node of the hat function, -1 if none
+    bool timesAbsCos; // whether the variable is multiplied by |cos theta|
+    double coefficient;
+  };
   /// One term of the S-curve parametrisation of a layer:
   /// sin(2 pi n nu) * sum_i c_i x_i, with x_i = hat_k(log E) [* |cos theta|] or |cos theta| or 1
   struct SCurveTerm {
     int harmonic;
-    std::vector<int> energyNode;   // node of the hat function of each variable, -1 if none
-    std::vector<bool> timesAbsCos; // whether each variable is multiplied by |cos theta|
-    std::vector<double> coefficients;
+    std::vector<SCurveVariable> variables;
   };
   /// S-curve terms per ECAL barrel layer (empty: layer not corrected)
   std::vector<std::vector<SCurveTerm>> m_thetaCorrTerms;

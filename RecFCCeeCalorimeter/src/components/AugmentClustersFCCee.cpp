@@ -302,8 +302,14 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
           return StatusCode::FAILURE;
         }
         term.harmonic = termData.at("harmonic");
-        term.coefficients = termData.at("coefficients").get<std::vector<double>>();
-        for (std::string variable : termData.at("variables")) {
+        const auto& variables = termData.at("variables");
+        const auto& coefficients = termData.at("coefficients");
+        if (variables.size() != coefficients.size()) {
+          error() << "Numbers of variables and coefficients differ in thetaLayerCorrectionFile" << endmsg;
+          return StatusCode::FAILURE;
+        }
+        for (size_t j = 0; j < variables.size(); j++) {
+          std::string variable = variables[j];
           bool timesAbsCos = false;
           constexpr std::string_view suffix = "*abscos";
           if (variable.size() > suffix.size() && variable.ends_with(suffix)) {
@@ -325,12 +331,7 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
             error() << "Unknown variable " << variable << " in thetaLayerCorrectionFile" << endmsg;
             return StatusCode::FAILURE;
           }
-          term.energyNode.push_back(node);
-          term.timesAbsCos.push_back(timesAbsCos);
-        }
-        if (term.coefficients.size() != term.energyNode.size()) {
-          error() << "Numbers of variables and coefficients differ in thetaLayerCorrectionFile" << endmsg;
-          return StatusCode::FAILURE;
+          term.variables.push_back({node, timesAbsCos, coefficients[j].get<double>()});
         }
         m_thetaCorrTerms[layer].push_back(term);
       }
@@ -371,11 +372,11 @@ double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, 
   double correction = 0.;
   for (const auto& term : layerTerms) {
     double amplitude = 0.;
-    for (size_t j = 0; j < term.coefficients.size(); j++) {
-      double x = (term.energyNode[j] >= 0) ? hat(term.energyNode[j]) : 1.;
-      if (term.timesAbsCos[j])
+    for (const auto& variable : term.variables) {
+      double x = (variable.energyNode >= 0) ? hat(variable.energyNode) : 1.;
+      if (variable.timesAbsCos)
         x *= absCos;
-      amplitude += term.coefficients[j] * x;
+      amplitude += variable.coefficient * x;
     }
     double phase = 2. * std::numbers::pi * term.harmonic * nu;
     correction += amplitude * std::sin(phase);
