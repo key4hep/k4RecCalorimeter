@@ -287,10 +287,12 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
             variable.resize(variable.size() - suffix.size());
           }
           int node = -1;
-          if (variable.rfind("hat", 0) == 0) {
-            node = std::stoi(variable.substr(3));
-            if (node < 0 || node >= int(m_thetaCorrLogENodes.size())) {
-              error() << "Energy node " << node << " out of range in thetaLayerCorrectionFile" << endmsg;
+          if (variable.starts_with("hat")) {
+            const std::string_view index = std::string_view(variable).substr(3);
+            const auto [nodeEnd, nodeError] = std::from_chars(index.data(), index.data() + index.size(), node);
+            if (nodeError != std::errc{} || nodeEnd != index.data() + index.size() || node < 0 ||
+                node >= int(m_thetaCorrLogENodes.size())) {
+              error() << "Invalid energy node " << variable << " in thetaLayerCorrectionFile" << endmsg;
               return StatusCode::FAILURE;
             }
           } else if (variable == "abscos") {
