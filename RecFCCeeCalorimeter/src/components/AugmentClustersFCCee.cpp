@@ -274,11 +274,10 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
         term.coefficients = termData.at("coefficients").get<std::vector<double>>();
         for (std::string variable : termData.at("variables")) {
           bool timesAbsCos = false;
-          const std::string suffix = "*abscos";
-          if (variable.size() > suffix.size() &&
-              variable.compare(variable.size() - suffix.size(), suffix.size(), suffix) == 0) {
+          constexpr std::string_view suffix = "*abscos";
+          if (variable.size() > suffix.size() && variable.ends_with(suffix)) {
             timesAbsCos = true;
-            variable = variable.substr(0, variable.size() - suffix.size());
+            variable.resize(variable.size() - suffix.size());
           }
           int node = -1;
           if (variable.rfind("hat", 0) == 0) {
