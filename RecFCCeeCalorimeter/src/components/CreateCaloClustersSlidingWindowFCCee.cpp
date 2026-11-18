@@ -195,7 +195,7 @@ StatusCode CreateCaloClustersSlidingWindowFCCee::execute(const EventContext&) co
               int centreTheta = iTheta;
               int centrePhi = iPhi;
               for (int iteration = 0; iteration < m_maxRecentringIterations; iteration++) {
-                int newTheta = m_towerTool->idTheta(atan2(sqrt(posX * posX + posY * posY), posZ));
+                int newTheta = m_towerTool->idTheta(std::atan2(std::hypot(posX, posY), posZ));
                 int newPhi = m_recentrePositionWindowInPhi ? int(m_towerTool->idPhi(atan2(posY, posX))) : centrePhi;
                 if (newTheta == centreTheta && newPhi == centrePhi) {
                   break;
