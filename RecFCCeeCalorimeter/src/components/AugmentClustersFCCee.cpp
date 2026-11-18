@@ -354,7 +354,7 @@ double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, 
         x *= absCos;
       amplitude += term.coefficients[j] * x;
     }
-    double phase = 2. * M_PI * term.harmonic * nu;
+    double phase = 2. * std::numbers::pi * term.harmonic * nu;
     correction += amplitude * (term.isSin ? std::sin(phase) : std::cos(phase));
   }
   return correction;
