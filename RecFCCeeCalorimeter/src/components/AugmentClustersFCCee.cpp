@@ -277,12 +277,15 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
       }
       for (const auto& termData : layerData.at("terms")) {
         SCurveTerm term;
+        // only sin terms: the theta cells are symmetric around pi/2, so theta -> pi - theta flips the sign of the
+        // position in the cell and of the bias; sin terms with an amplitude even in cos theta do the same, cos
+        // terms would not
         std::string function = termData.at("function");
-        if (function != "sin" && function != "cos") {
-          error() << "Unknown function " << function << " in thetaLayerCorrectionFile" << endmsg;
+        if (function != "sin") {
+          error() << "Unknown function " << function << " in thetaLayerCorrectionFile (only sin is supported)"
+                  << endmsg;
           return StatusCode::FAILURE;
         }
-        term.isSin = (function == "sin");
         term.harmonic = termData.at("harmonic");
         term.coefficients = termData.at("coefficients").get<std::vector<double>>();
         for (std::string variable : termData.at("variables")) {
@@ -360,7 +363,7 @@ double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, 
       amplitude += term.coefficients[j] * x;
     }
     double phase = 2. * std::numbers::pi * term.harmonic * nu;
-    correction += amplitude * (term.isSin ? std::sin(phase) : std::cos(phase));
+    correction += amplitude * std::sin(phase);
   }
   return correction;
 }

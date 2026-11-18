@@ -103,9 +103,8 @@ private:
       "(thetaRecalcWeights < 0) for the corrected layers."};
 
   /// One term of the S-curve parametrisation of a layer:
-  /// f(2 pi n nu) * sum_i c_i x_i, with f = sin or cos and x_i = hat_k(log E) [* |cos theta|] or |cos theta| or 1
+  /// sin(2 pi n nu) * sum_i c_i x_i, with x_i = hat_k(log E) [* |cos theta|] or |cos theta| or 1
   struct SCurveTerm {
-    bool isSin;
     int harmonic;
     std::vector<int> energyNode;   // node of the hat function of each variable, -1 if none
     std::vector<bool> timesAbsCos; // whether each variable is multiplied by |cos theta|
