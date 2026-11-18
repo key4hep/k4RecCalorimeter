@@ -349,7 +349,7 @@ double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, 
   for (const auto& term : layerTerms) {
     double amplitude = 0.;
     for (size_t j = 0; j < term.coefficients.size(); j++) {
-      double x = (term.energyNode[j] >= 0) ? hat[term.energyNode[j]] : 1.;
+      double x = (term.energyNode[j] >= 0) ? hat(term.energyNode[j]) : 1.;
       if (term.timesAbsCos[j])
         x *= absCos;
       amplitude += term.coefficients[j] * x;
