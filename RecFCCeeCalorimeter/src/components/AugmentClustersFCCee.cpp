@@ -242,6 +242,13 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
     m_thetaCorrLogENodes.clear();
     for (double node : payload.at("model").at("energy_nodes_GeV"))
       m_thetaCorrLogENodes.push_back(std::log(node));
+    // the energies must be positive (finite log) and strictly increasing
+    const auto& nodes = m_thetaCorrLogENodes;
+    if (nodes.empty() || !std::ranges::all_of(nodes, [](double x) { return std::isfinite(x); }) ||
+        std::ranges::adjacent_find(nodes, std::greater_equal<>{}) != nodes.end()) {
+      error() << "energy_nodes_GeV in thetaLayerCorrectionFile must be positive and strictly increasing" << endmsg;
+      return StatusCode::FAILURE;
+    }
 
     m_thetaCorrTerms.assign(m_numLayers[k], {});
     for (const auto& [layerName, layerData] : payload.at("layers").items()) {
