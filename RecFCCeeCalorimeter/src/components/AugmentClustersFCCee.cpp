@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #include <numbers>
@@ -173,6 +174,11 @@ StatusCode AugmentClustersFCCee::initialize() {
 
   k4FWCore::putCollectionParameter(m_outClusters.objKey(), edm4hep::labels::ShapeParameterNames, showerShapeDecorations,
                                    this);
+  // record which S-curve parametrisation the theta_<detector>_layer_<i> of the ECAL barrel are corrected with
+  if (!m_thetaLayerCorrectionFile.value().empty())
+    k4FWCore::putCollectionParameter(m_outClusters.objKey(), "thetaLayerCorrectionFile",
+                                     std::filesystem::path(m_thetaLayerCorrectionFile.value()).filename().string(),
+                                     this);
 
   return StatusCode::SUCCESS;
 }
@@ -286,9 +292,10 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
         return StatusCode::FAILURE;
       }
       if (m_thetaRecalcLayerWeights[k][layer] >= 0) {
-        warning() << "Layer " << layer << " uses logarithmic weights for theta: its S-curve correction is not "
-                  << "applied (the parametrisation is for linear weights)" << endmsg;
-        continue;
+        error() << "Layer " << layer << " uses logarithmic weights for theta, but the parametrisation in "
+                << "thetaLayerCorrectionFile is for linear weights: set thetaRecalcWeights < 0 for this layer"
+                << endmsg;
+        return StatusCode::FAILURE;
       }
       for (const auto& termData : layerData.at("terms")) {
         SCurveTerm term;
