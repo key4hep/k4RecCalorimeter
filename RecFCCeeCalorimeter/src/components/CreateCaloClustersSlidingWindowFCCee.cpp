@@ -206,7 +206,11 @@ StatusCode CreateCaloClustersSlidingWindowFCCee::execute(const EventContext&) co
                     continue;
                   }
                   for (int ipPhi = newPhi - halfPhiPos; ipPhi <= newPhi + halfPhiPos; ipPhi++) {
-                    for (auto cell : cellsInTowersMap[std::make_pair(ipTheta, phiNeighbour(ipPhi))]) {
+                    const auto tower = cellsInTowersMap.find(std::make_pair(ipTheta, phiNeighbour(ipPhi)));
+                    if (tower == cellsInTowersMap.end()) {
+                      continue;
+                    }
+                    for (const auto& cell : tower->second) {
                       newX += cell.getPosition().x * cell.getEnergy();
                       newY += cell.getPosition().y * cell.getEnergy();
                       newZ += cell.getPosition().z * cell.getEnergy();
