@@ -183,6 +183,11 @@ ecalEndcapSamplingFraction = (
 doSWClustering = True
 doTopoClustering = True
 
+# re-centre the position window of the sliding-window clusters on the barycentre
+# not used by default in production, but turned on here for the purpose of testing that the code is not broken:
+# in theta for the ECAL barrel clusters, in theta and phi for the ECAL+HCAL clusters
+recentreSWPositionWindow = True
+
 # cluster energy corrections
 # simple parametrisations of up/downstream losses for ECAL-only clusters
 # not to be applied for ECAL+HCAL clustering
@@ -208,6 +213,12 @@ ecalBarrelThetaWeights = [
     4.0,
     4.0,
 ]  # to be recalculated for V03, separately for topo and calo clusters...
+
+# S-curve correction of the theta barycentres of the layers of the ECAL barrel sliding-window clusters
+# not used by default in production, but turned on here for the purpose of testing that the code is not broken.
+# The parametrisation is for linear weights in all layers and for the sliding-window clusters with the position
+# window re-centred in theta: these clusters then use linear weights instead of ecalBarrelThetaWeights
+thetaLayerCorrectionFile = "layer_scurve_LArPb_recentered_theta.json"
 
 # run photon ID algorithm
 # not run by default in production, but to be turned on here for the purpose of testing that the code is not broken
@@ -703,6 +714,7 @@ if doSWClustering:
         nPhiFinal=finP,
         energyThreshold=threshold,
         energySharingCorrection=False,
+        recentrePositionWindow=recentreSWPositionWindow,
         createClusterCellCollection=True,
         OutputLevel=INFO,
     )
@@ -780,7 +792,12 @@ if doSWClustering:
             numLayers=[ecalBarrelLayers],
             readoutNames=[ecalBarrelReadoutName],
             layerFieldNames=["layer"],
-            thetaRecalcWeights=[ecalBarrelThetaWeights],
+            thetaRecalcWeights=[
+                [-1] * ecalBarrelLayers
+                if thetaLayerCorrectionFile
+                else ecalBarrelThetaWeights
+            ],
+            thetaLayerCorrectionFile=thetaLayerCorrectionFile,
             do_photon_shapeVar=runPhotonIDTool,
             do_widthTheta_logE_weights=logEWeightInPhotonID,
             OutputLevel=INFO,
@@ -880,6 +897,8 @@ if doSWClustering:
             nPhiFinal=finP,
             energyThreshold=threshold,
             energySharingCorrection=False,
+            recentrePositionWindow=recentreSWPositionWindow,
+            recentrePositionWindowInPhi=recentreSWPositionWindow,
             createClusterCellCollection=True,
             OutputLevel=INFO,
         )
