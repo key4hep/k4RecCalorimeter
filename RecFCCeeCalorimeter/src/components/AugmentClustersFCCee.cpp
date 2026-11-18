@@ -25,8 +25,13 @@
 #include "TVector3.h"
 #include <edm4hep/Constants.h>
 
+#include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <fstream>
+#include <functional>
+#include <numbers>
+#include <string_view>
 
 DECLARE_COMPONENT(AugmentClustersFCCee)
 
