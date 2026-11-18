@@ -244,6 +244,21 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
     }
     input >> payload;
 
+    // the position in the cell depends on the theta grid: check that it matches the geometry
+    const auto& geometry = payload.at("geometry");
+    const double gridSize = segmentation->gridSizeTheta();
+    const auto matchesSegmentation = [&](const char* name, double value) {
+      const double valueInFile = geometry.at(name);
+      if (std::abs(valueInFile - value) <= 1e-6 * gridSize)
+        return true;
+      error() << name << " in thetaLayerCorrectionFile (" << valueInFile << ") differs from the one of the "
+              << "segmentation (" << value << ")" << endmsg;
+      return false;
+    };
+    if (!matchesSegmentation("grid_size_theta", gridSize) ||
+        !matchesSegmentation("offset_theta", segmentation->offsetTheta()))
+      return StatusCode::FAILURE;
+
     m_thetaCorrLogENodes.clear();
     for (double node : payload.at("model").at("energy_nodes_GeV"))
       m_thetaCorrLogENodes.push_back(std::log(node));
