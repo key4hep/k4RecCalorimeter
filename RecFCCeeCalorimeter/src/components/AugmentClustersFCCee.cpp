@@ -209,10 +209,9 @@ std::pair<std::vector<int>, std::vector<double>> MergeSumAndSort(const std::vect
 
 StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
   // the correction is defined for the ECAL barrel, with the theta-module merged segmentation
-  for (size_t k = 0; k < m_systemIDs.size(); k++) {
-    if (m_systemIDs[k] == systemID_EMB)
-      m_thetaCorrSystemIndex = k;
-  }
+  const auto emb = std::ranges::find(m_systemIDs.value(), systemID_EMB);
+  if (emb != m_systemIDs.value().end())
+    m_thetaCorrSystemIndex = emb - m_systemIDs.value().begin();
   if (m_thetaCorrSystemIndex < 0) {
     error() << "thetaLayerCorrectionFile is set but the ECAL barrel is not among the systemIDs" << endmsg;
     return StatusCode::FAILURE;
