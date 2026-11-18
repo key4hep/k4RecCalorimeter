@@ -225,7 +225,6 @@ StatusCode CreateCaloClustersSlidingWindowFCCee::execute(const EventContext&) co
                 posX = newX / newEnergy;
                 posY = newY / newEnergy;
                 posZ = newZ / newEnergy;
-                sumEnergyPos = newEnergy;
                 centreTheta = newTheta;
                 centrePhi = newPhi;
               }
