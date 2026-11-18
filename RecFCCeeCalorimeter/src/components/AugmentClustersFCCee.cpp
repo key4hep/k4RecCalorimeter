@@ -252,9 +252,10 @@ StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
 
     m_thetaCorrTerms.assign(m_numLayers[k], {});
     for (const auto& [layerName, layerData] : payload.at("layers").items()) {
-      size_t layer = std::stoul(layerName);
-      if (layer >= m_numLayers[k]) {
-        error() << "Layer " << layer << " in thetaLayerCorrectionFile does not exist" << endmsg;
+      size_t layer = 0;
+      const auto [layerEnd, layerError] = std::from_chars(layerName.data(), layerName.data() + layerName.size(), layer);
+      if (layerError != std::errc{} || layerEnd != layerName.data() + layerName.size() || layer >= m_numLayers[k]) {
+        error() << "Layer " << layerName << " in thetaLayerCorrectionFile does not exist" << endmsg;
         return StatusCode::FAILURE;
       }
       // the parametrisation is in units of the cell width of the layer: check that it matches the geometry
