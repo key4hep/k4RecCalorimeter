@@ -335,18 +335,15 @@ double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, 
   double nu = u - std::floor(u) - 0.5;
   // hat functions of log(E): piecewise-linear interpolation between the nodes, constant outside
   const auto& nodes = m_thetaCorrLogENodes;
-  double logE = std::min(std::max(std::log(energy), nodes.front()), nodes.back());
-  std::vector<double> hat(nodes.size(), 0.);
-  if (nodes.size() == 1) {
-    hat[0] = 1.;
-  } else {
-    size_t i = 0;
-    while (i + 2 < nodes.size() && logE > nodes[i + 1])
-      i++;
-    double t = (logE - nodes[i]) / (nodes[i + 1] - nodes[i]);
-    hat[i] = 1. - t;
-    hat[i + 1] = t;
+  const double logE = std::clamp(std::log(energy), nodes.front(), nodes.back());
+  // logE lies in [nodes[i], nodes[i + 1]], with weight 1 - t on node i and t on node i + 1
+  size_t i = 0;
+  double t = 0.;
+  if (nodes.size() > 1) {
+    i = std::min<size_t>(std::ranges::upper_bound(nodes, logE) - nodes.begin(), nodes.size() - 1) - 1;
+    t = (logE - nodes[i]) / (nodes[i + 1] - nodes[i]);
   }
+  const auto hat = [&](int node) { return node == int(i) ? 1. - t : (node == int(i) + 1 ? t : 0.); };
   double absCos = std::abs(std::cos(theta));
   double correction = 0.;
   for (const auto& term : layerTerms) {
