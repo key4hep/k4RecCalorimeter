@@ -94,6 +94,14 @@ StatusCode CalibrateCaloClusters::initialize() {
 
   k4FWCore::putCollectionParameter(m_outClusters.objKey(), edm4hep::labels::ShapeParameterNames, shapeParameters, this);
 
+  // propagate the name of the file of the S-curve correction of the theta barycentres of the input clusters, if any
+  // (set by AugmentClustersFCCee)
+  const auto thetaLayerCorrectionFile =
+      k4FWCore::getCollectionParameter<std::string>(m_inClusters.objKey(), "thetaLayerCorrectionFile", this);
+  if (thetaLayerCorrectionFile)
+    k4FWCore::putCollectionParameter(m_outClusters.objKey(), "thetaLayerCorrectionFile", *thetaLayerCorrectionFile,
+                                     this);
+
   // check if the shape parameters contain the inputs needed for the calibration
   m_inputPositionsInShapeParameters.clear();
   for (unsigned short int iSystem = 0; iSystem < m_systemIDs.size(); iSystem++) {
