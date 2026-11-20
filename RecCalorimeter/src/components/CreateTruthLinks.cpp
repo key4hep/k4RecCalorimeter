@@ -110,13 +110,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
       const auto& caloHit = assoc.getFrom();
       debug() << "Sim hit id and index: " << simHit.id() << " " << simHit.id().index << endmsg;
       debug() << "Calo hit id and index: " << caloHit.id() << " " << caloHit.id().index << endmsg;
-      if (nhits[simHit.id().index + ih * (1 << 24)] > 0) {
-        warning() << "Sim hit with more than one calo hit!!!"
-                  << endmsg; // GM: maybe this will be possible if we split hits based on timing?
-        continue;
-      } else {
-        nhits[simHit.id().index + ih * (1 << 24)] = 1;
-      }
+      nhits[simHit.id().index + ih * (1 << 24)] = 1;
 
       // extract digitised over deposited energy
       // assuming here there is at most one simhit per calo hit (0 in the case of noise hit)
@@ -244,6 +238,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // from there into the tracking volume, and did cause hits after leaving the tracker
                 // volume again ->  this_Kid started before the calo, and is the one
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()
@@ -257,6 +252,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // this_Kid started before the calo, and is the one
                 // the hit should be attributed to
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()

@@ -56,6 +56,27 @@ add_test(NAME simulateSiPM
 )
 set_test_env(simulateSiPM)
 
+add_test(NAME CreateTruthLinks_make_events
+         COMMAND python ${PROJECT_SOURCE_DIR}/RecCalorimeter/tests/scripts/make_truth_link_events.py truth_link_events.edm4hep.root
+         WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Testing/Temporary
+)
+set_test_env(CreateTruthLinks_make_events)
+set_tests_properties(CreateTruthLinks_make_events PROPERTIES FIXTURES_SETUP truth_link_events)
+
+add_test(NAME CreateTruthLinks_run
+         COMMAND k4run ${PROJECT_SOURCE_DIR}/RecCalorimeter/tests/options/runCreateTruthLinks.py
+         WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Testing/Temporary
+)
+set_test_env(CreateTruthLinks_run)
+set_tests_properties(CreateTruthLinks_run PROPERTIES FIXTURES_REQUIRED truth_link_events FIXTURES_SETUP truth_links)
+
+add_test(NAME CreateTruthLinks_check
+         COMMAND python ${PROJECT_SOURCE_DIR}/RecCalorimeter/tests/scripts/check_truth_links.py
+         WORKING_DIRECTORY ${PROJECT_BINARY_DIR}/Testing/Temporary
+)
+set_test_env(CreateTruthLinks_check)
+set_tests_properties(CreateTruthLinks_check PROPERTIES FIXTURES_REQUIRED truth_links)
+
 
 gaudi_add_module(k4RecCalorimeterTests
                  SOURCES
