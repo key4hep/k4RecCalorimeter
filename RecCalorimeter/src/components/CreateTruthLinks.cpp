@@ -102,6 +102,10 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
         m_cell_hit_linkCollectionHandles[ih]->get();
     debug() << "Collection size: " << caloHitSimCaloHitLinks->size() << endmsg;
 
+    std::map<edm4hep::CalorimeterHit, double> simEnergyOfCaloHits;
+    for (const auto& assoc : *caloHitSimCaloHitLinks)
+      simEnergyOfCaloHits[assoc.getFrom()] += assoc.getTo().getEnergy();
+
     // Loop over the G4 hits, find the associated calo hits, then loop over
     // the G4 hit contribution to calculate contribution of each MCParticle to the calo hit
     for (const auto& assoc : *caloHitSimCaloHitLinks) {
@@ -110,17 +114,10 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
       const auto& caloHit = assoc.getFrom();
       debug() << "Sim hit id and index: " << simHit.id() << " " << simHit.id().index << endmsg;
       debug() << "Calo hit id and index: " << caloHit.id() << " " << caloHit.id().index << endmsg;
-      if (nhits[simHit.id().index + ih * (1 << 24)] > 0) {
-        warning() << "Sim hit with more than one calo hit!!!"
-                  << endmsg; // GM: maybe this will be possible if we split hits based on timing?
-        continue;
-      } else {
-        nhits[simHit.id().index + ih * (1 << 24)] = 1;
-      }
+      nhits[simHit.id().index + ih * (1 << 24)] = 1;
 
-      // extract digitised over deposited energy
-      // assuming here there is at most one simhit per calo hit (0 in the case of noise hit)
-      double calib_factor = caloHit.getEnergy() / simHit.getEnergy();
+      // extract digitised over deposited energy of all sim hits of this calo hit
+      double calib_factor = caloHit.getEnergy() / simEnergyOfCaloHits[caloHit];
       debug() << "Calib factor = " << calib_factor << endmsg;
 
       // now loop over truth contributions
@@ -244,6 +241,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // from there into the tracking volume, and did cause hits after leaving the tracker
                 // volume again ->  this_Kid started before the calo, and is the one
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()
@@ -257,6 +255,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // this_Kid started before the calo, and is the one
                 // the hit should be attributed to
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()
@@ -484,8 +483,8 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
   debug() << "Finished linking calo hits to MC particles" << endmsg;
 
   // Build cellID -> links index once so the cluster loop below is O(hits) not O(hits x links).
-  std::unordered_map<uint64_t, std::vector<edm4hep::CaloHitMCParticleLink>> cellIdToLinks;
-  for (const auto& assoc : *caloHitMCParticleLinkCollection)
+  std::unordered_map<uint64_t, std::vector<edm4hep::MutableCaloHitMCParticleLink>> cellIdToLinks;
+  for (auto assoc : *caloHitMCParticleLinkCollection)
     cellIdToLinks[assoc.getFrom().getCellID()].push_back(assoc);
 
   debug() << "Creating Cluster<->MCParticle links using CaloHit<->MCParticle links, re-assigning the latter in some "
@@ -542,6 +541,38 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
         } // end loop over hits -> MCParticle links
       } // end loop over cluster hits
       ecalohitsum_unknown = ecalohitsum - ecalohitsum_known;
+
+      // A particle with a backscattered parent (or a non-generator particle without parents) is moved to its
+      // nearest ancestor contributing to this cluster, as the backscatter scattered back into its own cluster.
+      auto isBackscatterDescendant = [](const edm4hep::MCParticle& mcp) {
+        return mcp.getGeneratorStatus() != 1 && (mcp.getParents().empty() || mcp.getParents()[0].isBackscatter());
+      };
+      std::map<int, int> ancestorOfMcp;
+      for (const auto& [idx, e] : mcpEnergy) {
+        const auto& mcp = mcparticles->at(idx);
+        if (!isBackscatterDescendant(mcp))
+          continue;
+        auto ancestors = mcp.getParents();
+        while (!ancestors.empty() && ancestors[0].getGeneratorStatus() != 2) {
+          const auto ancestor = ancestors[0];
+          if (mcpEnergy.count(ancestor.id().index) && !isBackscatterDescendant(ancestor)) {
+            ancestorOfMcp[idx] = ancestor.id().index;
+            break;
+          }
+          ancestors = ancestor.getParents();
+        }
+      }
+      for (auto it = cluster.hits_begin(); it != cluster.hits_end(); it++) {
+        for (auto& link : cellIdToLinks[it->getCellID()]) {
+          auto ancestor = ancestorOfMcp.find(link.getTo().id().index);
+          if (ancestor != ancestorOfMcp.end())
+            link.setTo(mcparticles->at(ancestor->second));
+        }
+      }
+      for (const auto& [idx, ancestorIdx] : ancestorOfMcp) {
+        mcpEnergy[ancestorIdx] += mcpEnergy[idx];
+        mcpEnergy.erase(idx);
+      }
       debug() << "Calo energy in hit: all/known/unknown = " << ecalohitsum << " " << ecalohitsum_known << " "
               << ecalohitsum_unknown << endmsg;
 
