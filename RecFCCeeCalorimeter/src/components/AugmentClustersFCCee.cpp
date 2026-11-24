@@ -15,12 +15,24 @@
 #include "detectorSegmentations/FCCSWGridModuleThetaMerged_k4geo.h"
 #include "detectorSegmentations/FCCSWGridPhiTheta_k4geo.h"
 
+// JSON
+#include "nlohmann/json.hpp"
+
 // ROOT
 #include "TLorentzVector.h"
 #include "TMath.h"
 #include "TString.h"
 #include "TVector3.h"
 #include <edm4hep/Constants.h>
+
+#include <algorithm>
+#include <charconv>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <functional>
+#include <numbers>
+#include <string_view>
 
 DECLARE_COMPONENT(AugmentClustersFCCee)
 
@@ -120,6 +132,13 @@ StatusCode AugmentClustersFCCee::initialize() {
     }
   }
 
+  // per-layer S-curve correction of the theta barycentres
+  if (!m_thetaLayerCorrectionFile.value().empty()) {
+    StatusCode sc = initThetaLayerCorrection();
+    if (sc.isFailure())
+      return sc;
+  }
+
   // initialise the list of metadata for the clusters
   // append to the metadata of the input clusters (if any)
   auto showerShapeDecorations = k4FWCore::getCollectionParameter<std::vector<std::string>>(
@@ -155,10 +174,16 @@ StatusCode AugmentClustersFCCee::initialize() {
 
   k4FWCore::putCollectionParameter(m_outClusters.objKey(), edm4hep::labels::ShapeParameterNames, showerShapeDecorations,
                                    this);
+  // record which S-curve parametrisation the theta_<detector>_layer_<i> of the ECAL barrel are corrected with
+  if (!m_thetaLayerCorrectionFile.value().empty())
+    k4FWCore::putCollectionParameter(m_outClusters.objKey(), "thetaLayerCorrectionFile",
+                                     std::filesystem::path(m_thetaLayerCorrectionFile.value()).filename().string(),
+                                     this);
 
   return StatusCode::SUCCESS;
 }
 
+namespace {
 // for all cells in a certain layer: vec A is theta_id, vec B is E_cell
 // make a 1D projection to theta: sum up the E_cell over modules with the same theta_id
 // then sort the theta vec (for finding theta neighbors), update the E vec simultaneously
@@ -190,6 +215,180 @@ std::pair<std::vector<int>, std::vector<double>> MergeSumAndSort(const std::vect
     vec_2[i] = B_new[indices[i]];
   }
   return std::make_pair(vec_1, vec_2);
+}
+} // namespace
+
+StatusCode AugmentClustersFCCee::initThetaLayerCorrection() {
+  // the correction is defined for the ECAL barrel, with the theta-module merged segmentation
+  const auto emb = std::ranges::find(m_systemIDs.value(), systemID_EMB);
+  if (emb != m_systemIDs.value().end())
+    m_thetaCorrSystemIndex = emb - m_systemIDs.value().begin();
+  if (m_thetaCorrSystemIndex < 0) {
+    error() << "thetaLayerCorrectionFile is set but the ECAL barrel is not among the systemIDs" << endmsg;
+    return StatusCode::FAILURE;
+  }
+  const size_t k = m_thetaCorrSystemIndex;
+  dd4hep::DDSegmentation::Segmentation* aSegmentation =
+      m_geoSvc->getDetector()->readout(m_readoutNames[k]).segmentation().segmentation();
+  auto* segmentation = dynamic_cast<dd4hep::DDSegmentation::FCCSWGridModuleThetaMerged_k4geo*>(aSegmentation);
+  if (!segmentation) {
+    error() << "The theta S-curve correction needs the FCCSWGridModuleThetaMerged_k4geo segmentation" << endmsg;
+    return StatusCode::FAILURE;
+  }
+  // offsetTheta is the centre of fine cell 0: the cell edges are half a fine cell below
+  m_thetaCorrCellEdge = segmentation->offsetTheta() - 0.5 * segmentation->gridSizeTheta();
+  m_thetaCorrCellWidth.assign(m_numLayers[k], 0.);
+  for (size_t layer = 0; layer < m_numLayers[k]; layer++)
+    m_thetaCorrCellWidth[layer] = segmentation->gridSizeTheta() * segmentation->mergedThetaCells(layer);
+
+  nlohmann::json payload;
+  try {
+    std::ifstream input(m_thetaLayerCorrectionFile.value());
+    if (!input.good()) {
+      error() << "Cannot open thetaLayerCorrectionFile " << m_thetaLayerCorrectionFile.value() << endmsg;
+      return StatusCode::FAILURE;
+    }
+    input >> payload;
+
+    // the position in the cell depends on the theta grid: check that it matches the geometry
+    const auto& geometry = payload.at("geometry");
+    const double gridSize = segmentation->gridSizeTheta();
+    const auto matchesSegmentation = [&](const char* name, double value) {
+      const double valueInFile = geometry.at(name);
+      if (std::abs(valueInFile - value) <= 1e-6 * gridSize)
+        return true;
+      error() << name << " in thetaLayerCorrectionFile (" << valueInFile << ") differs from the one of the "
+              << "segmentation (" << value << ")" << endmsg;
+      return false;
+    };
+    if (!matchesSegmentation("grid_size_theta", gridSize) ||
+        !matchesSegmentation("offset_theta", segmentation->offsetTheta()))
+      return StatusCode::FAILURE;
+
+    m_thetaCorrLogENodes.clear();
+    for (double node : payload.at("model").at("energy_nodes_GeV"))
+      m_thetaCorrLogENodes.push_back(std::log(node));
+    // the energies must be positive (finite log) and strictly increasing
+    const auto& nodes = m_thetaCorrLogENodes;
+    if (nodes.empty() || !std::ranges::all_of(nodes, [](double x) { return std::isfinite(x); }) ||
+        std::ranges::adjacent_find(nodes, std::greater_equal<>{}) != nodes.end()) {
+      error() << "energy_nodes_GeV in thetaLayerCorrectionFile must be positive and strictly increasing" << endmsg;
+      return StatusCode::FAILURE;
+    }
+
+    m_thetaCorrTerms.assign(m_numLayers[k], {});
+    for (const auto& [layerName, layerData] : payload.at("layers").items()) {
+      size_t layer = 0;
+      const auto [layerEnd, layerError] = std::from_chars(layerName.data(), layerName.data() + layerName.size(), layer);
+      if (layerError != std::errc{} || layerEnd != layerName.data() + layerName.size() || layer >= m_numLayers[k]) {
+        error() << "Layer " << layerName << " in thetaLayerCorrectionFile does not exist" << endmsg;
+        return StatusCode::FAILURE;
+      }
+      // the parametrisation is in units of the cell width of the layer: check that it matches the geometry
+      double cellWidth = layerData.at("cell_width");
+      if (std::abs(cellWidth - m_thetaCorrCellWidth[layer]) > 1e-6 * m_thetaCorrCellWidth[layer]) {
+        error() << "Cell width of layer " << layer << " in thetaLayerCorrectionFile (" << cellWidth
+                << ") differs from the one of the segmentation (" << m_thetaCorrCellWidth[layer] << ")" << endmsg;
+        return StatusCode::FAILURE;
+      }
+      if (m_thetaRecalcLayerWeights[k][layer] >= 0) {
+        error() << "Layer " << layer << " uses logarithmic weights for theta, but the parametrisation in "
+                << "thetaLayerCorrectionFile is for linear weights: set thetaRecalcWeights < 0 for this layer"
+                << endmsg;
+        return StatusCode::FAILURE;
+      }
+      for (const auto& termData : layerData.at("terms")) {
+        SCurveTerm term;
+        // only sin terms: the theta cells are symmetric around pi/2, so theta -> pi - theta flips the sign of the
+        // position in the cell and of the bias; sin terms with an amplitude even in cos theta do the same, cos
+        // terms would not
+        std::string function = termData.at("function");
+        if (function != "sin") {
+          error() << "Unknown function " << function << " in thetaLayerCorrectionFile (only sin is supported)"
+                  << endmsg;
+          return StatusCode::FAILURE;
+        }
+        term.harmonic = termData.at("harmonic");
+        const auto& variables = termData.at("variables");
+        const auto& coefficients = termData.at("coefficients");
+        if (variables.size() != coefficients.size()) {
+          error() << "Numbers of variables and coefficients differ in thetaLayerCorrectionFile" << endmsg;
+          return StatusCode::FAILURE;
+        }
+        for (size_t j = 0; j < variables.size(); j++) {
+          std::string variable = variables[j];
+          bool timesAbsCos = false;
+          constexpr std::string_view suffix = "*abscos";
+          if (variable.size() > suffix.size() && variable.ends_with(suffix)) {
+            timesAbsCos = true;
+            variable.resize(variable.size() - suffix.size());
+          }
+          int node = -1;
+          if (variable.starts_with("hat")) {
+            const std::string_view index = std::string_view(variable).substr(3);
+            const auto [nodeEnd, nodeError] = std::from_chars(index.data(), index.data() + index.size(), node);
+            if (nodeError != std::errc{} || nodeEnd != index.data() + index.size() || node < 0 ||
+                node >= int(m_thetaCorrLogENodes.size())) {
+              error() << "Invalid energy node " << variable << " in thetaLayerCorrectionFile" << endmsg;
+              return StatusCode::FAILURE;
+            }
+          } else if (variable == "abscos") {
+            timesAbsCos = true;
+          } else if (variable != "1") {
+            error() << "Unknown variable " << variable << " in thetaLayerCorrectionFile" << endmsg;
+            return StatusCode::FAILURE;
+          }
+          term.variables.push_back({node, timesAbsCos, coefficients[j].get<double>()});
+        }
+        m_thetaCorrTerms[layer].push_back(term);
+      }
+    }
+  } catch (const nlohmann::json::exception& e) {
+    error() << "Error reading thetaLayerCorrectionFile " << m_thetaLayerCorrectionFile.value() << ": " << e.what()
+            << endmsg;
+    return StatusCode::FAILURE;
+  }
+
+  info() << "Theta S-curve correction of the layer barycentres read from " << m_thetaLayerCorrectionFile.value()
+         << endmsg;
+  for (size_t layer = 0; layer < m_thetaCorrTerms.size(); layer++)
+    info() << "  layer " << layer << ": " << m_thetaCorrTerms[layer].size() << " terms" << endmsg;
+  return StatusCode::SUCCESS;
+}
+
+double AugmentClustersFCCee::thetaLayerCorrection(unsigned layer, double theta, double energy) const {
+  const auto& layerTerms = m_thetaCorrTerms[layer];
+  if (layerTerms.empty() || energy <= 0.)
+    return 0.;
+  // position of the barycentre inside its cell, in [-0.5, 0.5)
+  double width = m_thetaCorrCellWidth[layer];
+  double u = (theta - m_thetaCorrCellEdge) / width;
+  double nu = u - std::floor(u) - 0.5;
+  // hat functions of log(E): piecewise-linear interpolation between the nodes, constant outside
+  const auto& nodes = m_thetaCorrLogENodes;
+  const double logE = std::clamp(std::log(energy), nodes.front(), nodes.back());
+  // logE lies in [nodes[i], nodes[i + 1]], with weight 1 - t on node i and t on node i + 1
+  size_t i = 0;
+  double t = 0.;
+  if (nodes.size() > 1) {
+    i = std::min<size_t>(std::ranges::upper_bound(nodes, logE) - nodes.begin(), nodes.size() - 1) - 1;
+    t = (logE - nodes[i]) / (nodes[i + 1] - nodes[i]);
+  }
+  const auto hat = [&](int node) { return node == int(i) ? 1. - t : (node == int(i) + 1 ? t : 0.); };
+  double absCos = std::abs(std::cos(theta));
+  double correction = 0.;
+  for (const auto& term : layerTerms) {
+    double amplitude = 0.;
+    for (const auto& variable : term.variables) {
+      double x = (variable.energyNode >= 0) ? hat(variable.energyNode) : 1.;
+      if (variable.timesAbsCos)
+        x *= absCos;
+      amplitude += variable.coefficient * x;
+    }
+    double phase = 2. * std::numbers::pi * term.harmonic * nu;
+    correction += amplitude * std::sin(phase);
+  }
+  return correction;
 }
 
 StatusCode AugmentClustersFCCee::finalize() { return Gaudi::Algorithm::finalize(); }
@@ -666,6 +865,13 @@ StatusCode AugmentClustersFCCee::execute([[maybe_unused]] const EventContext& ev
         // make sure phi is in range -pi..pi
         if (sumPhiLayer[layer + startPositionToFill] > TMath::Pi())
           sumPhiLayer[layer + startPositionToFill] -= TMath::TwoPi();
+
+        // optional S-curve correction of the theta barycentre of the ECAL barrel layers
+        if (int(k) == m_thetaCorrSystemIndex && sumThetaLayer[layer + startPositionToFill] != 0.) {
+          double theta = sumThetaLayer[layer + startPositionToFill];
+          sumThetaLayer[layer + startPositionToFill] =
+              theta - m_thetaCorrCellWidth[layer] * thetaLayerCorrection(layer, theta, newCluster.getEnergy());
+        }
 
         newCluster.addToShapeParameters(sumEnLayer[layer + startPositionToFill] / E); // E fraction of layer
         newCluster.addToShapeParameters(sumThetaLayer[layer + startPositionToFill]);

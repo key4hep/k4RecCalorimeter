@@ -86,6 +86,14 @@ StatusCode PhotonIDTool::initialize() {
   shapeParameters.push_back("photonIDscore");
   k4FWCore::putCollectionParameter(m_outClusters.objKey(), edm4hep::labels::ShapeParameterNames, shapeParameters, this);
 
+  // propagate the name of the file of the S-curve correction of the theta barycentres of the input clusters, if any
+  // (set by AugmentClustersFCCee)
+  const auto thetaLayerCorrectionFile =
+      k4FWCore::getCollectionParameter<std::string>(m_inClusters.objKey(), "thetaLayerCorrectionFile", this);
+  if (thetaLayerCorrectionFile)
+    k4FWCore::putCollectionParameter(m_outClusters.objKey(), "thetaLayerCorrectionFile", *thetaLayerCorrectionFile,
+                                     this);
+
   info() << "Initialized the photonID MVA tool" << endmsg;
   return StatusCode::SUCCESS;
 }

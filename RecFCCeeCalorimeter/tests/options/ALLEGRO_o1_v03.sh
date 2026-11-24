@@ -36,6 +36,10 @@ if ! test -f ./cellNoise_map_endcapTurbine_electronicsNoiseLevel.root; then  # a
 
   # add here the lines to get the files for the photon ID
 fi
+# S-curve correction of the theta barycentres of the ECAL barrel layers (checked separately, since it was added later)
+if ! test -f ./layer_scurve_LArPb_recentered_theta.json; then
+  download_file "https://fccsw.web.cern.ch/fccsw/filesForSimDigiReco/ALLEGRO/ALLEGRO_o1_v03/layer_scurve_LArPb_recentered_theta.json"
+fi
 
 # run the RECO step
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd ) # workaround to have ctests working

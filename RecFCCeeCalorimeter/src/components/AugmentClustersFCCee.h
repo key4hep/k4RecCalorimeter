@@ -30,6 +30,13 @@ namespace DDSegmentation {
  *  Add to the cluster shape parameters the sum of the cluster cells energy and barycenter theta/phi coordinates
  *  per layer. The theta position is calculated with a log(E) weighting
  *
+ *  Optionally (thetaLayerCorrectionFile), the theta barycentres of the ECAL barrel layers are corrected for the
+ *  S-curve (bias towards the cell centre due to the finite granularity), with a parametrisation read from a JSON
+ *  file; the corrected values are stored in theta_<detector>_layer_<i> in place of the uncorrected ones, and the
+ *  name of the file is stored in the collection parameter thetaLayerCorrectionFile of the output clusters. The
+ *  parametrisation is a function of the energy of the input clusters (before any MVA calibration) and is valid only
+ *  for clusters built with the same algorithm and settings as those used to derive it.
+ *
  *  @author Alexis Maloizel
  *  @author Giovanni Marchiori
  *  @author Tong Li
@@ -90,6 +97,43 @@ private:
   std::vector<int> nMergedModules;
   // the number of modules / phi cells
   std::vector<int> nModules;
+
+  /// JSON file with the per-layer S-curve correction of the theta barycentres ("": no correction)
+  Gaudi::Property<std::string> m_thetaLayerCorrectionFile{
+      this, "thetaLayerCorrectionFile", "",
+      "JSON file with the parametrisation of the S-curve of the theta barycentre of each ECAL barrel layer. If set, "
+      "theta_<detector>_layer_<i> contains the corrected barycentres and the file name is stored in the collection "
+      "parameter thetaLayerCorrectionFile of the output clusters. Requires linear weights (thetaRecalcWeights < 0) "
+      "for all the layers in the file. The parametrisation depends on the energy of the input "
+      "clusters (before any MVA calibration) and on how they were built, so it must be derived with the same "
+      "clustering algorithm and settings (e.g. sliding-window clusters with or without re-centring of the position "
+      "window, which differ from topological clusters)."};
+
+  /// One variable x_i of a term of the S-curve parametrisation, with its coefficient c_i
+  struct SCurveVariable {
+    int energyNode;   // node of the hat function, -1 if none
+    bool timesAbsCos; // whether the variable is multiplied by |cos theta|
+    double coefficient;
+  };
+  /// One term of the S-curve parametrisation of a layer:
+  /// sin(2 pi n nu) * sum_i c_i x_i, with x_i = hat_k(log E) [* |cos theta|] or |cos theta| or 1
+  struct SCurveTerm {
+    int harmonic;
+    std::vector<SCurveVariable> variables;
+  };
+  /// S-curve terms per ECAL barrel layer (empty: layer not corrected)
+  std::vector<std::vector<SCurveTerm>> m_thetaCorrTerms;
+  /// log(E/GeV) of the energy nodes of the hat functions
+  std::vector<double> m_thetaCorrLogENodes;
+  /// theta cell width per ECAL barrel layer and lower edge of the theta cells
+  std::vector<double> m_thetaCorrCellWidth;
+  double m_thetaCorrCellEdge = 0.;
+  /// index in m_readoutNames of the ECAL barrel, -1 if absent or no correction
+  int m_thetaCorrSystemIndex = -1;
+  /// read the correction file and set up the members above
+  StatusCode initThetaLayerCorrection();
+  /// S-curve correction (in units of the layer cell width) for a theta barycentre
+  double thetaLayerCorrection(unsigned layer, double theta, double energy) const;
 
   /// Limit of debug printing
   mutable uint debugIter = 0;
