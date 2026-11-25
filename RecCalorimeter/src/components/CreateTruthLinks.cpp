@@ -244,6 +244,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // from there into the tracking volume, and did cause hits after leaving the tracker
                 // volume again ->  this_Kid started before the calo, and is the one
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()
@@ -257,6 +258,7 @@ StatusCode CreateTruthLinks::execute(const EventContext&) const {
                 // this_Kid started before the calo, and is the one
                 // the hit should be attributed to
                 remap_as_you_go[index_mcp] = index_this_Kid;
+                index_mcp = index_this_Kid;
                 {
                   const edm4hep::MCParticle& this_Kid = mcparticles->at(index_this_Kid);
                   debug() << "Hit " << simHit.id() << " / " << caloHit.id() << " attributed to kid " << this_Kid.id()
